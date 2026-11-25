@@ -1,0 +1,2 @@
+TYPEMAP
+WoLFPSort::XS   T_PTROBJ
