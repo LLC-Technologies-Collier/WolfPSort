@@ -8,3 +8,6 @@
 \.bak$
 \.tdy$
 \.ERR$
+\.bs$
+\.o$
+^lib/WoLFPSort/XS\.c$

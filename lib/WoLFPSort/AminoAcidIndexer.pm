@@ -7,7 +7,7 @@ package WoLFPSort::AminoAcidIndexer;
 use strict;
 use warnings;
 use Carp qw(croak);
-use WoLFPSort;
+use WoLFPSort::Backend;
 
 our $VERSION = '0.200';
 
@@ -58,12 +58,7 @@ sub encode_sequence {
     my ($seq) = @_;
     croak 'Expected a non-empty sequence string' unless defined $seq && length $seq;
     my @idx = map { to_index($_) } split //a, $seq;
-    if ( WoLFPSort::has_pdl() ) {
-        require PDL::Lite;
-        require PDL::Core;
-        return PDL::Core::long( \@idx );
-    }
-    return \@idx;
+    return WoLFPSort::Backend->current()->encode_indices( \@idx );
 }
 
 1;
@@ -80,10 +75,5 @@ WoLFPSort::AminoAcidIndexer - Map one-letter amino acid codes to integer indices
 
     my $idx = WoLFPSort::AminoAcidIndexer::to_index('A'); # 0
     my $enc = WoLFPSort::AminoAcidIndexer::encode_sequence('MKRIS');
-
-=head1 TYPES
-
-C<encode_sequence> returns a 1D C<long> L<PDL> ndarray when L<PDL> is
-available, or a plain Perl arrayref of integers in C<0..22> otherwise.
 
 =cut

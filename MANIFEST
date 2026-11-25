@@ -102,6 +102,9 @@ INSTALL
 lib/WoLFPSort.pm
 lib/WoLFPSort/AminoAcidIndex.pm
 lib/WoLFPSort/AminoAcidIndexer.pm
+lib/WoLFPSort/Backend.pm
+lib/WoLFPSort/Backend/PDL.pm
+lib/WoLFPSort/Backend/PurePerl.pm
 lib/WoLFPSort/CLI/Predict.pm
 lib/WoLFPSort/CLI/Summary.pm
 lib/WoLFPSort/FastaCleaner.pm

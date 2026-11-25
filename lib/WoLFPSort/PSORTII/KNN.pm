@@ -6,22 +6,10 @@ package WoLFPSort::PSORTII::KNN;
 
 use strict;
 use warnings;
-use Carp         qw(croak);
-use Scalar::Util qw(blessed);
-use WoLFPSort;
+use Carp qw(croak);
+use WoLFPSort::Backend;
 
 our $VERSION = '0.200';
-
-my $_PDL_LOADED = 0;
-
-sub _ensure_pdl {
-    return if $_PDL_LOADED;
-    require PDL::Lite;
-    require PDL::Core;
-    require PDL::Ufunc;
-    $_PDL_LOADED = 1;
-    return;
-}
 
 sub new {
     my ( $class, %args ) = @_;
@@ -29,21 +17,8 @@ sub new {
         croak "Missing required argument '$req'" unless defined $args{$req};
     }
 
-    my $use_pdl = WoLFPSort::has_pdl();
-    my $mat;
-    if ($use_pdl) {
-        _ensure_pdl();
-        $mat
-            = blessed( $args{matrix} ) && $args{matrix}->isa('PDL')
-            ? $args{matrix}
-            : PDL::Core::double( $args{matrix} );
-        croak 'Expected 2D training matrix (F x N)' unless $mat->ndims == 2;
-    }
-    else {
-        croak 'Expected arrayref of training rows'
-            unless ref( $args{matrix} ) eq 'ARRAY';
-        $mat = $args{matrix};
-    }
+    my $backend = WoLFPSort::Backend->current();
+    my $mat     = $backend->psortii_prepare( $args{matrix} );
 
     my %class_freq;
     for my $loc ( @{ $args{locations} } ) {
@@ -51,7 +26,7 @@ sub new {
     }
 
     return bless {
-        use_pdl    => $use_pdl,
+        backend    => $backend,
         matrix     => $mat,
         names      => $args{names},
         locations  => $args{locations},
@@ -63,32 +38,13 @@ sub predict {
     my ( $self, $query, $k ) = @_;
     $k ||= 25;
 
-    my @d;
-    if ( $self->{use_pdl} ) {
-        my $q
-            = blessed($query) && $query->isa('PDL')
-            ? $query
-            : PDL::Core::double($query);
-        my $diff = $self->{matrix} - $q;
-        @d = PDL::Ufunc::sumover( $diff * $diff )->list;
-    }
-    else {
-        for my $row ( @{ $self->{matrix} } ) {
-            my $dist = 0.0;
-            for my $f ( 0 .. $#{$row} ) {
-                my $delta = $row->[$f] - $query->[$f];
-                $dist += $delta * $delta;
-            }
-            push @d, $dist;
-        }
-    }
-
+    my $d    = $self->{backend}->psortii_distances( $self->{matrix}, $query );
     my $locs = $self->{locations};
     my $cf   = $self->{class_freq};
     my $n    = scalar @{ $self->{names} };
     $k = $n if $k > $n;
 
-    my @order = sort { $d[$a] <=> $d[$b] || $cf->{ $locs->[$a] } <=> $cf->{ $locs->[$b] } }
+    my @order = sort { $d->[$a] <=> $d->[$b] || $cf->{ $locs->[$a] } <=> $cf->{ $locs->[$b] } }
         ( 0 .. $n - 1 );
 
     my %freq;
@@ -126,10 +82,5 @@ WoLFPSort::PSORTII::KNN - Legacy PSORT II Euclidean kNN classifier
         locations => \@loc_labels,
     );
     my $res = $knn->predict(\@query_features, 25);
-
-=head1 TYPES
-
-When L<PDL> is available, feature matrices and query vectors use C<double>
-ndarrays. Complex types are not supported.
 
 =cut

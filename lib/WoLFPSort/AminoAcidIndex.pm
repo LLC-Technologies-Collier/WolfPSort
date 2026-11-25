@@ -7,20 +7,9 @@ package WoLFPSort::AminoAcidIndex;
 use strict;
 use warnings;
 use Carp qw(croak);
-use WoLFPSort;
+use WoLFPSort::Backend;
 
 our $VERSION = '0.200';
-
-my $_PDL_LOADED = 0;
-
-sub _ensure_pdl {
-    return if $_PDL_LOADED;
-    require PDL::Lite;
-    require PDL::Core;
-    require PDL::Ufunc;
-    $_PDL_LOADED = 1;
-    return;
-}
 
 my %relativeAbundance = (
     name => 'relative abundance',
@@ -175,25 +164,9 @@ sub indexNames {
 sub abundanceWeightedAverageValue {
     my ( $self, @extra ) = @_;
     croak 'expected one argument' if @extra;
-    if ( WoLFPSort::has_pdl() ) {
-        _ensure_pdl();
-        my $abund = PDL::Core::double( [ map { $relativeAbundance{$_} } @standard20Residues ] );
-        my $vals  = PDL::Core::double( [ map { $self->value($_) } @standard20Residues ] );
-        return PDL::Ufunc::sumover( $abund * $vals )->sclr / PDL::Ufunc::sumover($abund)->sclr;
-    }
-    my ( $sum, $abund_sum ) = ( 0.0, 0.0 );
-    for my $res (@standard20Residues) {
-        $sum       += $relativeAbundance{$res} * $self->value($res);
-        $abund_sum += $relativeAbundance{$res};
-    }
-    return $sum / $abund_sum;
-}
-
-sub sequence_to_pdl {
-    my ( $self, $seqArrayRef, $startPos, $endPos ) = @_;
-    _ensure_pdl();
-    my @vals = map { $self->value( $seqArrayRef->[$_] ) } ( $startPos .. $endPos - 1 );
-    return PDL::Core::double( \@vals );
+    my @abund = map { $relativeAbundance{$_} } @standard20Residues;
+    my @vals  = map { $self->value($_) } @standard20Residues;
+    return WoLFPSort::Backend->current()->weighted_average( \@abund, \@vals );
 }
 
 sub seqAverage {
@@ -201,15 +174,8 @@ sub seqAverage {
     my $seqArrayRef = $args[0];
     my ( $startPos, $endPos ) = _startEndPos(@args);
     return 0 if $endPos <= $startPos;
-    if ( WoLFPSort::has_pdl() ) {
-        my $vec = $self->sequence_to_pdl( $seqArrayRef, $startPos, $endPos );
-        return PDL::Ufunc::sumover($vec)->sclr;
-    }
-    my $sum = 0.0;
-    for my $i ( $startPos .. $endPos - 1 ) {
-        $sum += $self->value( $seqArrayRef->[$i] );
-    }
-    return $sum;
+    my @vals = map { $self->value( $seqArrayRef->[$_] ) } ( $startPos .. $endPos - 1 );
+    return WoLFPSort::Backend->current()->vector_sum( \@vals );
 }
 
 sub maxWindowAverage {
@@ -223,23 +189,9 @@ sub maxWindowAverage {
     my $last_start = $numWindowPositions > $startPos ? $numWindowPositions : $startPos;
     my $slice_end  = $last_start + $windowLength;
     my $n_win      = $last_start - $startPos + 1;
+    my @vals       = map { $self->value( $seqArrayRef->[$_] ) } ( $startPos .. $slice_end - 1 );
 
-    if ( WoLFPSort::has_pdl() ) {
-        my $vec = $self->sequence_to_pdl( $seqArrayRef, $startPos, $slice_end );
-        return PDL::Ufunc::sumover($vec)->sclr if $n_win <= 1;
-        my $windows = $vec->lags( 0, 1, $windowLength );
-        my $sums    = PDL::Ufunc::sumover( $windows->transpose );
-        return PDL::Ufunc::max($sums)->sclr;
-    }
-
-    my $max = $self->seqAverage( $seqArrayRef, $startPos, $windowLength );
-    my $cur = $max;
-    for ( my $i = $startPos; $i < $numWindowPositions; ++$i ) {
-        $cur -= $self->value( $seqArrayRef->[$i] );
-        $cur += $self->value( $seqArrayRef->[ $i + $windowLength ] );
-        $max = $cur if $cur > $max;
-    }
-    return $max;
+    return WoLFPSort::Backend->current()->max_window_sum( \@vals, $windowLength, $n_win );
 }
 
 sub _startEndPos {
@@ -286,10 +238,5 @@ WoLFPSort::AminoAcidIndex - Amino acid index and sliding-window sums
 
     my $kd = WoLFPSort::AminoAcidIndex->new('KYTJ820101');
     my $max_hydro = $kd->maxWindowAverage(\@residues, 12, 0, 29);
-
-=head1 TYPES
-
-When L<PDL> is available, index values use C<double> ndarrays. Complex types
-are not supported.
 
 =cut
