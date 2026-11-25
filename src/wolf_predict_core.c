@@ -123,8 +123,13 @@ static double scale_value(const WolfFeatureTable *tbl, double x) {
     }
     if (tbl->n_u <= 1) return tbl->ranks[0];
 
-    /* Step-function insertion rank (before APBC06 linear interpolation) */
-    return ((double)lo - 0.5) / (double)tbl->n_u * 100.0;
+    /* Horton et al. (APBC06), Section 2.3.1, p. 3, para. 1, sentences 3-4:
+     * linear interpolation (and extrapolation outside [min, max]). */
+    size_t i0 = (lo == 0) ? 0 : (lo >= tbl->n_u ? tbl->n_u - 2 : lo - 1);
+    size_t i1 = i0 + 1;
+    double dv = tbl->vals[i1] - tbl->vals[i0];
+    if (dv == 0.0) return tbl->ranks[i0];
+    return tbl->ranks[i0] + ((x - tbl->vals[i0]) / dv) * (tbl->ranks[i1] - tbl->ranks[i0]);
 }
 
 void wolf_model_free(WolfModel *m) {
@@ -329,7 +334,7 @@ size_t wolf_model_predict(const WolfModel *m,
         q_scaled[f] = scale_value(&m->tables[f], raw_features[f]);
     }
 
-    /* Horton et al. (APBC06), Section 2.3.2, Equation 1 */
+    /* Horton et al. (APBC06), Section 2.3.2, p. 4, para. 1, Equation 1 */
     for (size_t i = 0; i < m->n_samples; i++) {
         double        l1   = 0.0;
         double        l2sq = 0.0;
@@ -355,7 +360,7 @@ size_t wolf_model_predict(const WolfModel *m,
         got++;
     }
 
-    /* Horton et al. (APBC06), Section 2.3.3, Table 3 */
+    /* Horton et al. (APBC06), Section 2.3.3, p. 4, para. 1 & Table 3 */
     for (size_t c = 0; c < m->n_cls; c++) {
         double s = 0.0;
         for (size_t j = 0; j < m->n_cls; j++) {

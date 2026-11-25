@@ -30,6 +30,9 @@ subtest 'pure-Perl UniformScaler' => sub {
     );
     my $q = $scaler->transform( [ 20, 300 ] );
     is_deeply( $q, [ 25, 50 ], '1D pure-Perl query transform' );
+    is_deeply( $scaler->transform( [ 25, 150 ] ), [ 37.5, 12.5 ],
+        'pure-Perl linear interpolation' );
+    is_deeply( $scaler->transform( [ 0, 500 ] ), [ -25, 100 ], 'pure-Perl linear extrapolation' );
 };
 
 subtest 'pure-Perl KNN parity with fungi baseline' => sub {

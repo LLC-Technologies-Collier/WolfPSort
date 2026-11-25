@@ -136,13 +136,28 @@ sub _bsearch_left {
     return $lo;
 }
 
+# Horton et al. (APBC06), Section 2.3.1 (Candidate Features), p. 3, para. 1,
+# sentences 3-4: normalize each feature to its percentile value in the training
+# data; for unseen test values, use linear interpolation (and extrapolation
+# outside [min, max]) to obtain a pseudo-percentile value.
+sub _interp_pp {
+    my ( $x, $vals, $ranks, $n_u, $idx ) = @_;
+    return $ranks->[0] if $n_u <= 1;
+    my $i0 = $idx - 1;
+    $i0 = 0        if $i0 < 0;
+    $i0 = $n_u - 2 if $i0 > $n_u - 2;
+    my $i1 = $i0 + 1;
+    my $dv = $vals->[$i1] - $vals->[$i0];
+    return $ranks->[$i0] if $dv == 0;
+    return $ranks->[$i0] + ( ( $x - $vals->[$i0] ) / $dv ) * ( $ranks->[$i1] - $ranks->[$i0] );
+}
+
 sub _transform_pp_row {
     my ( $self, $row ) = @_;
     my $n_feat = $self->{n_features};
     croak 'Feature count mismatch: got ' . scalar( @{$row} ) . ", expected $n_feat"
         if @{$row} != $n_feat;
 
-    my $N      = $self->{n_samples};
     my $tables = $self->{tables};
     my @out;
     for my $f ( 0 .. $n_feat - 1 ) {
@@ -154,8 +169,7 @@ sub _transform_pp_row {
             push @out, $tbl->{ranks}[$idx];
         }
         else {
-            my $ins = $idx < $n_u ? $tbl->{lo}[$idx] : $N;
-            push @out, ( ( $ins - 0.5 ) / $N ) * 100.0;
+            push @out, _interp_pp( $x, $tbl->{vals}, $tbl->{ranks}, $n_u, $idx );
         }
     }
     return \@out;
@@ -195,22 +209,31 @@ sub transform {
     for my $f ( 0 .. $n_feat - 1 ) {
         my $tbl   = $tables->[$f];
         my $v     = $tbl->{vals};
-        my $lo    = $tbl->{lo};
         my $ranks = $tbl->{ranks};
         my $n_u   = $tbl->{n_u};
 
         my $x_col = $mat_t->slice(":,($f)");
-        my $idx   = PDL::Primitive::vsearch( $x_col, $v, { mode => 'insert_leftmost' } );
+        if ( $n_u <= 1 ) {
+            $out_t->slice(":,($f)") .= $ranks->at(0);
+            next;
+        }
 
+        # Horton et al. (APBC06), Section 2.3.1, p. 3, para. 1, sentences 3-4:
+        # exact mid-rank for seen values, linear interpolation/extrapolation for unseen.
+        my $idx       = PDL::Primitive::vsearch( $x_col, $v, { mode => 'insert_leftmost' } );
         my $in_bounds = ( $idx < $n_u );
         my $safe_idx  = $idx->clip( 0, $n_u - 1 );
         my $is_match  = $in_bounds & ( $v->index($safe_idx) == $x_col );
 
-        my $ins_pos        = $in_bounds * $lo->index($safe_idx) + ( !$in_bounds ) * $N;
-        my $non_match_rank = ( ( $ins_pos - 0.5 ) / $N ) * 100.0;
+        my $i0     = ( $idx - 1 )->clip( 0, $n_u - 2 );
+        my $i1     = $i0 + 1;
+        my $v0     = $v->index($i0);
+        my $v1     = $v->index($i1);
+        my $r0     = $ranks->index($i0);
+        my $r1     = $ranks->index($i1);
+        my $interp = $r0 + ( ( $x_col - $v0 ) / ( $v1 - $v0 ) ) * ( $r1 - $r0 );
 
-        $out_t->slice(":,($f)")
-            .= $is_match * $ranks->index($safe_idx) + ( !$is_match ) * $non_match_rank;
+        $out_t->slice(":,($f)") .= $is_match * $ranks->index($safe_idx) + ( !$is_match ) * $interp;
     }
 
     my $out = $out_t->transpose->sever;

@@ -160,8 +160,12 @@ static double scale_value(const FeatureTable *tbl, double x) {
     }
     if (tbl->n_u <= 1) return tbl->ranks[0];
 
-    /* Step-function insertion rank (before APBC06 linear interpolation) */
-    return ((double)lo - 0.5) / (double)tbl->n_u * 100.0;
+    /* Linear interpolation (and extrapolation outside [min, max]) */
+    size_t i0 = (lo == 0) ? 0 : (lo >= tbl->n_u ? tbl->n_u - 2 : lo - 1);
+    size_t i1 = i0 + 1;
+    double dv = tbl->vals[i1] - tbl->vals[i0];
+    if (dv == 0.0) return tbl->ranks[i0];
+    return tbl->ranks[i0] + ((x - tbl->vals[i0]) / dv) * (tbl->ranks[i1] - tbl->ranks[i0]);
 }
 
 static void format_number(double val, char *buf, size_t bufsz) {

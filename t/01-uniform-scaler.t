@@ -29,6 +29,15 @@ subtest 'basic quantile scaling' => sub {
     is_deeply( [ $q->dims ], [2], '1D query returns 1D ndarray' );
     is( $q->at(0), 25, '1D query feature 0' );
     is( $q->at(1), 50, '1D query feature 1' );
+
+    # Out-of-sample linear interpolation & extrapolation (Horton et al. APBC06, Sec 2.3.1)
+    my $q_mid = $scaler->transform( double( [ 25, 150 ] ) );
+    is( $q_mid->at(0), 37.5, 'interior linear interpolation (25 -> 37.5)' );
+    is( $q_mid->at(1), 12.5, 'interior linear interpolation (150 -> 12.5)' );
+
+    my $q_ext = $scaler->transform( double( [ 0, 500 ] ) );
+    is( $q_ext->at(0), -25, 'left linear extrapolation (0 -> -25)' );
+    is( $q_ext->at(1), 100, 'right linear extrapolation (500 -> 100)' );
 };
 
 subtest 'error paths' => sub {
