@@ -3,11 +3,12 @@
 # load FindBin in BEGIN block to enable relative path module import.
 BEGIN{  
     use FindBin;
-    push @INC, "$FindBin::Bin/psortModules";
+    push @INC, "$FindBin::Bin/psortModules", "$FindBin::Bin/../../lib";
 }
-use PsortRegexMotifs;
-use PsortAminoAcidIndex;
+use WoLFPSort::RegexMotifs;
+use WoLFPSort::AminoAcidIndex;
 use PsortSeq;
+use WoLFPSort::PSORTII::KNN;
 use File::Basename;
 use strict;
 our ( $OPT_V, $endl );
@@ -19,6 +20,7 @@ our ( $OPT_V, $endl );
 ## PSORT II:  main routine
 ##                      beta version (971107)
 ##            copyright: Kenta Nakai & Paul Horton, 1997
+#  Copyright 2026 Google LLC
 ###############################################################
 
 #  ----------- contact and license ---------------------------
@@ -521,8 +523,8 @@ sub seqana {
     else {die "*** undefined mtype value: $mtype\n";}
 
 ### variables from iPSORT
-    my $KyteDoolittle =  PsortAminoAcidIndex->new( "KYTJ820101" );
-    my $KleinNetCharge = PsortAminoAcidIndex->new( "KLEP840101" );
+    my $KyteDoolittle =  WoLFPSort::AminoAcidIndex->new( 'KYTJ820101' );
+    my $KleinNetCharge = WoLFPSort::AminoAcidIndex->new( 'KLEP840101' );
     
     $varsLocal{maxHydropathy5_29_11} =
 	$KyteDoolittle->maxWindowAverage( \@PsortSeq::seq, 11, 5, 24 );
@@ -548,7 +550,7 @@ sub computeRegexMotifFeature{
 
     my $regexFile;
     open $regexFile, "$FindBin::Bin/motifLibraries/$libraryName.regexMotifs";
-    my $regexMotifs = PsortRegexMotifs->new( $regexFile );
+    my $regexMotifs = WoLFPSort::RegexMotifs->new( $regexFile );
     my $numMatches = $OPT_V ? $regexMotifs->reportMatches( $PsortSeq::seq, $endl )
 	: $regexMotifs->numMatches( $PsortSeq::seq );
     close $regexFile;
@@ -557,53 +559,31 @@ sub computeRegexMotifFeature{
 
 
 
-# subroutines for kNN ###################################################
+# subroutines for kNN (PDL-accelerated via WoLFPSort::PSORTII::KNN) #########
 
-my %distance_pair;
-sub by_distance {
-    ($distance_pair{ $a } <=> $distance_pair{ $b }) || 
-	($training_class_freq{$LOCAT{ $a }} <=> 
-	 $training_class_freq{$LOCAT{ $b }});  ## more common
-}
+my $_psortii_knn_cache;
 
 sub knn {
     my($k, %vars) = @_;
-    my(%freq, $neighbor_class, @sorted_freq_key, @sorted_names);
 
-# calculate distances
-    for my $training_seq_id (@training_names) {
-	my($distance) = 0;
-	foreach my $var (@psortII_variable_names) {
-	    $distance += ($ATTRIB{ $training_seq_id, $var } - $vars{$var}) ** 2;
+    unless (defined $_psortii_knn_cache) {
+	my @rows;
+	my @locs;
+	for my $training_seq_id (@training_names) {
+	    push @rows, [ map { $ATTRIB{$training_seq_id, $_} } @psortII_variable_names ];
+	    push @locs, $LOCAT{$training_seq_id};
 	}
-	$distance_pair {$training_seq_id} = $distance;
+	$_psortii_knn_cache = WoLFPSort::PSORTII::KNN->new(
+	    matrix    => \@rows,
+	    names     => \@training_names,
+	    locations => \@locs,
+	);
     }
 
-    @sorted_names = sort by_distance (@training_names);
+    my @query = map { $vars{$_} } @psortII_variable_names;
+    my $res   = $_psortii_knn_cache->predict(\@query, $k);
 
-# check neighbor classes
-    foreach my $i (0..$k-1) {
-	$neighbor_class = $LOCAT{ $sorted_names[$i] };
-	
-	if(defined( $freq{ $neighbor_class } ) ) {
-	    ++$freq{ $neighbor_class };
-	} else {
-	    $freq{ $neighbor_class } = 1;
-	}
-    }
-
-#       2006/01/07 Modified by PH to break ties in displaying results
-#       using the overall class frequences in the traning data.
-#       This constrains the sort order and eases testing by making it
-#       more likely to get identical output on different platforms.
-# 	@sorted_freq_key = sort {$freq{$b}<=>$freq{$a}} (keys %freq);
-    @sorted_freq_key = 
-	sort {($freq{$b}<=>$freq{$a})  ||
-		  ($training_class_freq{$b} <=> 
-		   $training_class_freq{$a}) } (keys %freq);
-
-
-# print resuts
+# print results
     if( $OPT_V ){
 	if($OPT_HTML){ 
 	    print "<h4>Final Results: </h4>\n";
@@ -614,12 +594,12 @@ sub knn {
 	  }
     }
 
-    foreach (@sorted_freq_key) {
+    for my $entry (@{ $res->{classes} }) {
 	if( $OPT_HTML ){
-	    printf( "%5.1f %%: %s\n", $freq{$_}/$k*100, $loc_info{$_} );
+	    printf( "%5.1f %%: %s\n", $entry->{percent}, $loc_info{ $entry->{class} } );
 	}else{
-	    printf( "\t%5.1f %%: %s\n", $freq{$_}/$k*100, $loc_info{$_} );
+	    printf( "\t%5.1f %%: %s\n", $entry->{percent}, $loc_info{ $entry->{class} } );
 	}
     }
-    print "\n>> prediction for $PsortSeq::id is $sorted_freq_key[0]\n\n";
+    print "\n>> prediction for $PsortSeq::id is $res->{prediction}\n\n";
 }
