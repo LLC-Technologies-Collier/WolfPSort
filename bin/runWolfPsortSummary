@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
 #
 #  Author: Paul Horton (remnants of code from CJ Collier may remain).
 #  Maintainer: Paul Horton.
@@ -6,6 +6,7 @@
 #  Creation Date: Summer 2004
 #  Last Modification $Date: 2006/08/31 07:21:44 $
 #  Copyright: Paul Horton
+#  Copyright 2026 Google LLC
 #  Licensing: Anyone may distribute this under the GNU public license. For other
 #             license information contact: horton-p AT aist.go.jp
 #
@@ -21,100 +22,23 @@
 #  Args: organism type from {fungi, plant, animal}
 #
 #  Dependencies: This program depends on some files included in the
-#                installation in its directory or in ../data. This
-#                program uses the FindBin module to find itself so
-#                you should be able to install it anywhere if you 
-#                maintain the relative paths of the files it depends on.
+#                installation in its directory or in ../data.
 #
-BEGIN{  
-    use FindBin;
-    push @INC, $FindBin::Bin;
-}
-use Getopt::Long qw(:config posix_default bundling permute);
-use Pod::Usage;
-use FileHandle;
-use File::Basename;
-use fastafmt::GetOptWarnHandler;
 use strict;
+use warnings;
+use File::Basename qw(dirname);
+use File::Spec;
 
-# options with default values
-my $justPrint = 0;
-my $justComputeFeatures = 0;
-my $printSequenceDescription = 0;
-my $wolfPredictFlags = "";
-my $featureComputerFlag = "";
-my $man = 0;
-my $help = 0;
-my $usage = 0;
+my $bin_dir;
 
-
-my $cwd = $FindBin::Bin;
-
-# use this file for English documentation. Files under pod directory
-# for other languages.
-my $podSourcePathname = $0;
-if( ($ENV{LANG} =~ /^ja_JP/) &&
-    (-e "$cwd/pod/ja_JP/runWolfPsortSummary.ja_JP.eucjp.pod") ){
-    $podSourcePathname = "$cwd/pod/ja_JP/runWolfPsortSummary.ja_JP.eucjp.pod";
+BEGIN {
+    $bin_dir = dirname( File::Spec->rel2abs(__FILE__) );
+    push @INC, File::Spec->catdir( $bin_dir, File::Spec->updir, 'lib' );
 }
 
-fastafmt::GetOptWarnHandler->before( @ARGV );
-my $getOptionsRetval =
-    GetOptions( "n|just-print" => \$justPrint,
-		"f|just-compute-features" => \$justComputeFeatures,
-		"d|print-sequence-descriptions"
-		=> sub { 
-		    $featureComputerFlag = "--append-sequence-fasta-head";
-		    $wolfPredictFlags .= " --print-instance-comment" },
+use WoLFPSort::CLI::Summary;
 
-		"print-neighbors"     => sub { $wolfPredictFlags .= " --print-neighbors" },
-
-		"man"          => \$man,
-		"help"         => \$help,
-		"usage"        => \$usage,
-		);
-fastafmt::GetOptWarnHandler->after( @ARGV );
-
-$getOptionsRetval || pod2usage( -verbose => 0, -input => $podSourcePathname );
-
-####################################################
-# Process flags related to usage or documentation
-####################################################
-$man     && pod2usage( -verbose => 2, -input => $podSourcePathname );
-$help    && pod2usage( -verbose => 1, -input => $podSourcePathname );
-$usage   && pod2usage( -verbose => 0, -input => $podSourcePathname );
-
-
-my $organismType = shift;
-
-unless( $organismType && ($organismType =~ /^(fungi|plant|animal)$/) ){
-    print "OrganismType should be one of {\"fungi\", \"plant\", \"animal\"}\n  pipe fasta query sequences in from standard in\n\n";
-    pod2usage( -verbose => 0, -input => $podSourcePathname );
-}
-
-if( @ARGV ){
-    print "\nCommand Line Parsing Error; Do not know what to do with argument \"$ARGV[0]\"\n\n";
-    pod2usage( -verbose => 0, -input => $podSourcePathname );
-}
-
-# dirs
-my $dataDir = "$cwd/../data/";
-
-# programs
-my $sequenceCleaner = "$cwd/checkFastaInput.pl";
-my $featureComputer = "$cwd/psortModifiedForWolfFiles/psortModifiedForWoLF";
-my $wolfPredict      = "$cwd/wolfPredict";
-
-(-e $wolfPredict) || die( "Error: Binary file: $wolfPredict not found.\nPerhaps you need to copy the appropriate binary from the archeticture specific ones under $cwd/binByPlatform/?\n" );
-
-# The commands that will be executed
-my $featureComputerCommand = "$featureComputer $featureComputerFlag --outputForWoLF --noNormalization";
-my $wolfPredictCommand = "$wolfPredict $wolfPredictFlags $dataDir/$organismType.wolfw $dataDir/$organismType.wolff $dataDir/$organismType.wolfu";
-
-my $command = "$sequenceCleaner | $featureComputerCommand";
-$justComputeFeatures || ($command .="| $wolfPredictCommand");
-
-$justPrint ? print "$command\n" : system( $command );
+exit WoLFPSort::CLI::Summary::run( \@ARGV, bin_dir => $bin_dir, pod_path => $0 );
 
 =pod
 
