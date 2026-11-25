@@ -65,6 +65,11 @@ sub _load_motif_library {
     return $self->{motif_cache}{$name};
 }
 
+# Horton et al. (APBC06), Section 2.3.1 (Candidate Features), p. 3, para. 1 &
+# Table 5, p. 7: extracts PSORT/PSORT II sorting signals (gvh, psg, mip, mit,
+# alm, m1a/m1b/m3a/m3b/mNt, tms, erl, leu, nuc, pox, tyr, yqr, vac, dna, rib,
+# myr, rnp, act), iPSORT hydropathy/charge windows, amino acid composition, and
+# sequence length.
 sub _compute_seqana {
     my ($self) = @_;
     my %vars;

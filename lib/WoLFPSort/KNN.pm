@@ -184,7 +184,8 @@ sub predict_vector {
     my $q_scaled = $self->{scaler}->transform($q_pdl);
     my $diff     = $self->{scaled_X} - $q_scaled;
 
-    # Horton et al. (APBC06), Section 2.3.2, Equation 1:
+    # Horton et al. (APBC06), Section 2.3.2 (Classification Algorithm), p. 4,
+    # para. 1, Equation 1:
     # d_W(j, k) = sum_i w1_i * |F_ji - F_ki| + sqrt(sum_i w2_i * (F_ji - F_ki)^2)
     my $l1   = PDL::Ufunc::sumover( $self->{w1} * abs $diff );
     my $l2   = sqrt PDL::Ufunc::sumover( $self->{w2} * ( $diff * $diff ) );
@@ -213,8 +214,9 @@ sub predict_vector {
         $counts->set( $c, $counts->at($c) + 1.0 );
     }
 
-    # Horton et al. (APBC06), Section 2.3.3, Table 3:
-    # Expected utility score for each candidate site using the symmetric utility matrix.
+    # Horton et al. (APBC06), Section 2.3.3 (Extensions for Dual Localization
+    # Prediction), p. 4, para. 1 & Table 3: expected utility score using the
+    # symmetric utility matrix (1, 0.5, 0.333, 0).
     my @scores   = PDL::Ufunc::sumover( $self->{utility} * $counts )->list;
     my @nb_dists = map { $dist->at($_) } @neighbor_indices;
     return $self->_format_result( \@scores, \@neighbor_indices, \@nb_dists );
