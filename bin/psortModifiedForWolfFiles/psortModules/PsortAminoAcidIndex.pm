@@ -4,6 +4,7 @@
 #  Creation Date: : 2006.4.28
 #  Last Modification Date: $Date: 2006/07/11 09:14:26 $
 #  Copyright: Paul B. Horton
+#  Copyright 2026 Google LLC
 #  Licensing: Anyone may distribute this under the GNU public license. For other
 #             license information contact: horton-p AT aist.go.jp
 #
@@ -24,6 +25,8 @@
 #
 use strict;
 package PsortAminoAcidIndex;
+
+my $_HAS_PDL = $ENV{WOLFPSORT_NO_PDL} ? 0 : ( eval { require PDL::Lite; require PDL::Core; require PDL::Ufunc; 1 } ? 1 : 0 );
 
 use vars qw($VERSION);
 
@@ -140,22 +143,26 @@ sub abundanceWeightedAverageValue{
 #
 ######################################################################
 
-# average value for residues from a seq array.
+# average value for residues from a seq array (PDL-vectorized with pure-Perl fallback).
 sub seqAverage{
     my $this = shift;
     my $seqArrayRef = $_[0];
     my( $startPos, $endPos ) = _startEndPos( @_ );
-    
+    return 0 if $endPos <= $startPos;
+    if ( $_HAS_PDL ) {
+        my @vals = map { $this->value( $seqArrayRef->[$_] ) } ( $startPos .. $endPos - 1 );
+        return PDL::Ufunc::sumover( PDL::Core::double( \@vals ) )->sclr;
+    }
     my $sum = 0;
     for( my $i = $startPos; $i < $endPos; ++$i ){
-	$sum += $this->value( $$seqArrayRef[$i] );
+        $sum += $this->value( $$seqArrayRef[$i] );
     }
     return $sum;
 }
 
 
 # return the maximum of the average index value of all $windowLength length substrings in
-# the range given by $offset and $length
+# the range given by $offset and $length (PDL-vectorized with pure-Perl fallback).
 sub maxWindowAverage{
     my $this = shift;
     my $seqArrayRef = shift;
@@ -166,6 +173,19 @@ sub maxWindowAverage{
     my( $numWindowPositions ) = $endPos - $startPos - $windowLength + 1;
     if( $numWindowPositions < 0 ){
 	die "startPos: $startPos, endPos: $endPos, windowLength: $windowLength";
+    }
+    if ( $_HAS_PDL ) {
+        my $last_start = $numWindowPositions > $startPos ? $numWindowPositions : $startPos;
+        my $slice_end  = $last_start + $windowLength;
+        my @vals = map { $this->value( $seqArrayRef->[$_] ) } ( $startPos .. $slice_end - 1 );
+        my $vec  = PDL::Core::double( \@vals );
+
+        my $n_win = $last_start - $startPos + 1;
+        return PDL::Ufunc::sumover($vec)->sclr if $n_win <= 1;
+
+        my $windows = $vec->lags( 0, 1, $windowLength );
+        my $sums    = PDL::Ufunc::sumover( $windows->transpose );
+        return PDL::Ufunc::max($sums)->sclr;
     }
     my $max = $this->seqAverage( $seqArrayRef, $startPos, $windowLength );
     my( $average ) = $max;
