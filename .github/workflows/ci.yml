@@ -1,0 +1,118 @@
+# Copyright 2026 Google LLC
+# Licensed under the GNU General Public License v3 (GPLv3).
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} (${{ matrix.backend }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        backend: [pure-perl, pdl]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+          distribution: ${{ runner.os == 'Windows' && 'strawberry' || 'default' }}
+
+      - name: Install PDL (PDL backend only)
+        if: matrix.backend == 'pdl'
+        shell: bash
+        run: cpanm --notest PDL
+
+      - name: Build and run tests (pure-Perl)
+        if: matrix.backend == 'pure-perl'
+        shell: bash
+        env:
+          WOLFPSORT_NO_PDL: '1'
+          WOLFPSORT_NO_XS: '1'
+        run: |
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-2}")
+          MAKE=$(perl -MConfig -e 'print $Config{make}')
+          perl Makefile.PL
+          "$MAKE" -j"$NPROC"
+          prove -j"$NPROC" -bv t/01-uniform-scaler.t t/02-knn.t t/03-amino-acid-index.t t/04-psortii-knn.t t/06-fasta-cleaner.t t/07-motifs-and-indexer.t t/08-pure-perl-fallback.t
+
+      - name: Build and run tests (PDL + XS)
+        if: matrix.backend == 'pdl'
+        shell: bash
+        run: |
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-2}")
+          MAKE=$(perl -MConfig -e 'print $Config{make}')
+          perl Makefile.PL
+          "$MAKE" -j"$NPROC"
+          prove -j"$NPROC" -bv t/
+
+  author-tests:
+    name: Author tests (xt/)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+
+      - name: Install author test dependencies
+        run: cpanm --notest Test::Perl::Critic Test::PerlTidy Test::Pod Test::Kwalitee Test::CPAN::Changes
+
+      - name: Run xt/ author tests
+        env:
+          AUTHOR_TESTING: '1'
+          TEST_PERLTIDY: '1'
+        run: |
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-2}")
+          prove -j"$NPROC" -lv -Ilib xt/
+
+  c99-wolfpredict:
+    name: C99 wolfPredict (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+          distribution: ${{ runner.os == 'Windows' && 'strawberry' || 'default' }}
+
+      - name: Build C99 wolfPredict
+        shell: bash
+        run: |
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-2}")
+          cmake -S src -B build-c99
+          cmake --build build-c99 --config Release --parallel "$NPROC"
+
+      - name: Smoke-test C99 wolfPredict on fungi
+        shell: bash
+        run: |
+          BIN=./build-c99/wolfPredict
+          if [ -x ./build-c99/Release/wolfPredict.exe ]; then
+            BIN=./build-c99/Release/wolfPredict.exe
+          elif [ -x ./build-c99/wolfPredict.exe ]; then
+            BIN=./build-c99/wolfPredict.exe
+          fi
+          OUT=$(perl bin/runWolfPsortSummary -f fungi < bin/testQuery.fasta | "$BIN" data/fungi.wolfw data/fungi.wolff data/fungi.wolfu)
+          echo "$OUT"
+          echo "$OUT" | grep -q "RCC1_YEAST nucl 12.5"
+          echo "$OUT" | grep -q "EF1A_ASHGO cyto 27"

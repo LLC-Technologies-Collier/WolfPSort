@@ -1,0 +1,13 @@
+# Perl Best Practices inspired perltidy configuration
+-l=100
+-i=4
+-ci=4
+-vt=2
+-cti=0
+-pt=1
+-bt=1
+-sbt=1
+-bbt=1
+-nsfs
+-nolq
+-wbb="% + - * / x != == >= <= =~ !~ < > | & = **= += *= &= <<= &&= -= /= |= >>= ||= //= .= %= ^= x="

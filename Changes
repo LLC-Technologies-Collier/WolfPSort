@@ -1,0 +1,9 @@
+Revision history for WoLFPSort
+
+0.200 2026-11-25
+    - Refactor WoLF PSORT into modular lib/WoLFPSort/ distribution with Makefile.PL
+    - Replace 32-bit wolfPredict ELF binary with portable WoLFPSort::KNN and
+      WoLFPSort::UniformScaler (optional PDL acceleration with pure-Perl fallback)
+    - Extract ModelLoader, FeatureExtractor, FastaCleaner, Motif modules, and
+      in-process CLI drivers (WoLFPSort::CLI::Predict, WoLFPSort::CLI::Summary)
+    - Add unit, end-to-end parity, pure-Perl fallback, and author (xt/) test suites
